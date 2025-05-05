@@ -33,10 +33,10 @@ function Show-GpoUpdateConflicts() {
 
     # If any conflicts are detected, output the details of the conflicts.
     if ($Conflicts.Count -gt 0) {
-        Write-Host "[ERROR] WuFB conflicts detected. Please review and migrate the GPO managed update policies listed above." `
+        Write-Host "[ERROR] WuFB conflicts detected. Please review and migrate the GPO managed update policies listed below." `
         -ForegroundColor Red `
         -BackgroundColor Black
-        
+
         foreach ($Conflict in $Conflicts) {
             Write-Host "Conflicting Policy: $($Conflict.KeyPath)"
             Write-Host "Value: $($Conflict.Value)"
