@@ -1,0 +1,80 @@
+<#
+.SYNOPSIS
+    Collects Intune diagnostics from local WMI (CIM) and system event logs.
+.DESCRIPTION
+    This script retrieves all MDM-related CIM instances from the "root\cimv2\mdm\dmmap" namespace
+    and exports them to C:\Windows\System32\IntuneTelemetry\ClassName.xml. Specified Windows event logs
+    can also be exported to XML files in the same directory.
+.PARAMETER OutputDirectory
+    The directory where telemetry data will be saved. Defaults to a subfolder named "IntuneTelemetry"
+    in the current working directory.
+.EXAMPLE
+    .\Collect-IntuneDiagnostics.ps1 -OutputDirectory "C:\Diagnostics\Intune"
+#>
+
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $false)]
+    [string]$OutputDirectory = (Join-Path -Path (Get-Location) -ChildPath 'IntuneTelemetry')
+)
+
+function Get-MdmWmiData {
+    [CmdletBinding()]
+    param(
+        [string]$Namespace = 'root\cimv2\mdm\dmmap',
+        [string]$OutDir
+    )
+
+    # Retrieve all MDM CIM classes
+    $classes = Get-CimClass -Namespace $Namespace | Where-Object { $_.CimClassName -like 'MDM_*' }
+    foreach ($class in $classes) {
+        try {
+            Write-Verbose "Querying class $($class.CimClassName)"
+            $instances = Get-CimInstance -Namespace $Namespace -ClassName $class.CimClassName -ErrorAction Stop
+            $file = Join-Path $OutDir "$($class.CimClassName).xml"
+            # Export to CLI XML
+            $instances | Export-Clixml -Path $file
+        } catch {
+            Write-Warning "Failed to collect $($class.CimClassName): $_"
+        }
+    }
+}
+
+function Get-MdmEventLogs {
+    [CmdletBinding()]
+    param(
+        [string[]]$LogNames,
+        [string]$OutDir
+    )
+
+    foreach ($log in $LogNames) {
+        try {
+            Write-Verbose "Exporting events from log: $log"
+            $events = Get-WinEvent -LogName $log -MaxEvents 1000 -ErrorAction Stop
+            $file = Join-Path $OutDir "${log -replace '[\\/:]','_'}_events.xml"
+            # Export to CLI XML
+            $events | Export-Clixml -Path $file
+        } catch {
+            Write-Warning "Failed to export events from $log\: $_"
+        }
+    }
+}
+
+# Main execution
+Write-Verbose "Creating output directory: $OutputDirectory"
+if (-not (Test-Path -Path $OutputDirectory)) {
+    New-Item -Path $OutputDirectory -ItemType Directory | Out-Null
+}
+
+Write-Verbose "Collecting Intune WMI data from root\\cimv2\\mdm\\dmmap..."
+Get-MdmWmiData -Namespace 'root\cimv2\mdm\dmmap' -OutDir $OutputDirectory
+
+$intuneLogs = @(
+    'Microsoft-Windows-DeviceManagement-Enterprise-Diagnostics-Provider/Admin',
+    'System',
+    'Application'
+)
+Write-Verbose "Collecting event logs: $($intuneLogs -join ', ')"
+Get-MdmEventLogs -LogNames $intuneLogs -OutDir $OutputDirectory
+
+Write-Output "Intune telemetry collected successfully in: $OutputDirectory"
